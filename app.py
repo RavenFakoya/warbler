@@ -1,11 +1,12 @@
+from crypt import methods
 import os
 
-from flask import Flask, render_template, request, flash, redirect, session, g
+from flask import Flask, render_template, request, flash, redirect, session, g, abort
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
 from forms import UserAddForm, LoginForm, MessageForm, UpdateProfileForm
-from models import db, connect_db, User, Message
+from models import Likes, db, connect_db, User, Message
 
 CURR_USER_KEY = "curr_user"
 
@@ -160,7 +161,9 @@ def users_show(user_id):
                 .order_by(Message.timestamp.desc())
                 .limit(100)
                 .all())
-    return render_template('users/show.html', user=user, messages=messages)
+    
+    likes = [message.id for message in g.user.likes]
+    return render_template('users/show.html', user=user, messages=messages, likes=likes)
 
 
 @app.route('/users/<int:user_id>/following')
@@ -301,10 +304,15 @@ def messages_destroy(message_id):
     """Delete a message."""
 
     if not g.user:
+        flash("Access unauthorized", "danger")
+        return redirect("/")
+
+    msg = Message.query.get_or_404(message_id)
+    if msg.user_id != g.user.id:
         flash("Access unauthorized.", "danger")
         return redirect("/")
 
-    msg = Message.query.get(message_id)
+        
     db.session.delete(msg)
     db.session.commit()
 
@@ -312,6 +320,40 @@ def messages_destroy(message_id):
 
 ##############################################################################
 # Handle likes
+
+
+@app.route('/users/<int:user_id>/likes', methods=['GET'])
+def get_likes(user_id):
+    """Get users likes"""
+    if not g.user:
+        flash("Access unauthorized","danger")
+        return redirect("/")
+
+    user = User.query.get_or_404(user_id)
+    return render_template('users/likes.html', user=user)
+
+
+@app.route('/messages/<int:message_id>/like', methods=['POST'])
+def like_message(message_id):
+    """Like a message"""
+
+    if not g.user:
+        flash("Access unauthorized.", "danger")
+        return redirect("/")
+    
+    msg = Message.query.get(message_id)
+    
+    user_likes = g.user.likes
+
+    #If like is in the users likes, remove that msg from the users likes. Else add to users likes
+    if msg in user_likes:
+        g.user.likes = [like for like in user_likes if like != msg]
+    else:
+        g.user.likes.append(msg)
+    
+    db.session.commit()
+    
+    return redirect("/")
 
 
 
@@ -335,8 +377,10 @@ def homepage():
                     .order_by(Message.timestamp.desc())
                     .limit(100)
                     .all())
+        
+        likes = [msg.id for msg in g.user.likes]
 
-        return render_template('home.html', messages=messages)
+        return render_template('home.html', messages=messages, likes=likes)
 
     else:
         return render_template('home-anon.html')
