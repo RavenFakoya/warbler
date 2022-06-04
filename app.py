@@ -162,7 +162,7 @@ def users_show(user_id):
                 .limit(100)
                 .all())
     
-    likes = [message.id for message in g.user.likes]
+    likes = [message.id for message in user.likes]
     return render_template('users/show.html', user=user, messages=messages, likes=likes)
 
 
